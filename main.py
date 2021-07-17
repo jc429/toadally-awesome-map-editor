@@ -304,7 +304,7 @@ def fillMidFrame():
 		master=path_frame,
 		width=36
 	)
-	path_entry.insert(0,"../graphics/maps/map1/map1.png")
+	path_entry.insert(0,"../graphics/maps/test/testmap.png")
 	path_button = tk.Button(
 		master=path_frame,
 		text="Load Map",
@@ -324,7 +324,7 @@ def fillMidFrame():
 		master=imp_frame,
 		width=20
 	)
-	imp_entry.insert(0,"Export/map1Col.c")
+	imp_entry.insert(0,"Export/testMapCol.c")
 	imp_entry.grid(row=0, column=1)
 	tk.Button(
 			master=imp_frame, 
@@ -343,7 +343,7 @@ def fillMidFrame():
 		master=exp_frame,
 		width=14
 	)
-	exp_entry.insert(0,"map1Col")
+	exp_entry.insert(0,"testMapCol")
 	exp_entry.grid(row=0, column=1)
 	tk.Button(
 			master=exp_frame, 
