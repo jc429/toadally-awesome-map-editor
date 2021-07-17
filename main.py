@@ -1,18 +1,23 @@
 import os
 import tkinter as tk
+import re
 from tkinter.constants import BOTH, BOTTOM, LEFT, RIGHT, TRUE
+from tkinter.font import BOLD
 from PIL import ImageTk, Image 
 from functools import partial
 
 
 ### Globals ###
 TILES_PER_ROW = 16
+EDIT_MODE_EDIT = 0
+EDIT_MODE_PAINT = 1
 ### WARNING: VERY IMPORTANT THAT THESE MATCH THE VALUES HARD CODED IN THE GAME ###
 TILEPROP_SOLID		= 0x01
 TILEPROP_HOLE		= 0x02
 TILEPROP_GRAB		= 0x04
 TILEPROP_PAIN		= 0x08
 TILEPROP_VICTORY	= 0x80
+##########################
 
 program_dir = os.path.dirname(__file__)
 rel_path = "../graphics/maps/test/testmap.png"
@@ -25,9 +30,14 @@ tile_buttons = []		# array of buttons corresponding to tiles on the map grid
 tile_label = None		# label referencing currently selected tile
 path_entry = None		# text form for entering a path to a map
 map_canvas = None		# canvas that displays the currently open map
-
-
 selected_tile = 0
+imp_entry = None		# text form for importing map file
+exp_entry = None		# text form for exporting map file
+export_header_1 = "const unsigned short "
+export_header_2 = "[256] = {"
+export_footer = "};"
+
+
 ###############
 
 def loadMap(rel_path):
@@ -62,6 +72,27 @@ def selectTile(tile_id):
 # selectTile
 
 
+def paintTile(tile_id):
+	global selected_tile
+	global tile_label
+	selected_tile = tile_id
+	tile_text = "Currently Selected Tile: (" + str(tile_id%16) + "," + str(int(tile_id/16)) + ")"
+	tile_label['text'] = tile_text
+	saveSelectedTileProperties()
+	return
+# paintTile
+
+
+def clickTile(tile_id):
+	if edit_mode.get() == EDIT_MODE_PAINT:
+		print("Painting Tile " + str(tile_id))
+		paintTile(tile_id)
+	elif edit_mode.get() == EDIT_MODE_EDIT:
+		print("Editing Tile " + str(tile_id))
+		selectTile(tile_id)
+	return
+# clickTile
+
 def drawGrid():
 	global map_canvas
 	for i in range(1,TILES_PER_ROW):
@@ -82,9 +113,9 @@ def colorTile(tile_id, red_val, green_val, blue_val):
 def setTileProperties(tile_id, props):
 	global tile_properties
 	tile_properties[tile_id] = props
-	red_v = max(0, min((props & TILEPROP_SOLID), 2)) * 255
-	grn_v = 0
-	blu_v = 0
+	red_v = max(0, min((props & TILEPROP_SOLID), 1)) * 255
+	grn_v = max(0, min((props & TILEPROP_HOLE), 1)) * 255
+	blu_v = max(0, min((props & TILEPROP_GRAB), 1)) * 255
 	colorTile(tile_id, red_v, grn_v, blu_v)
 	return
 # setTileProperties
@@ -123,7 +154,7 @@ def loadTileProperties(tile_id):
 # loadTileProperties
 
 
-def saveTileProperties():
+def saveSelectedTileProperties():
 	global selected_tile
 	global prop_solid
 	global prop_hole
@@ -148,6 +179,63 @@ def saveTileProperties():
 # saveTileProperties
 
 
+def exportColData():
+	global export_header_1
+	global export_header_2
+	global export_footer
+	global exp_entry
+	global tile_properties
+	# assemble file path + open file
+	global program_dir
+	print("EXPORTING...")
+	export_file_path = program_dir + "\\Export\\" + exp_entry.get() + ".c"
+	export_file = open(export_file_path, "w")
+	# assemble + write header
+	header = "\n\n" + export_header_1 + exp_entry.get() + export_header_2 + "\n"
+	export_file.write(header)
+
+	for i in range(0,256):
+		tile_props = tile_properties[i]
+		if i % 16 == 0:
+			export_file.write("\t")
+		export_file.write("0x{:02x}".format(tile_props))
+		if i < 255:
+			export_file.write(", ")
+		if i % 16 == 15:
+			export_file.write("\n")
+
+	export_file.write(export_footer)
+	export_file.close()
+	print("EXPORT COMPLETE: file written to " + export_file_path)
+	return
+# exportColData
+
+
+def importColData():
+	global imp_entry
+	global program_dir
+	global tile_properties
+	print("IMPORTING...")
+	import_file_path = program_dir + "\\" + imp_entry.get()
+	import_file = open(import_file_path, "r")
+	x = 0
+	for line in import_file:
+		if line[0] != '\t':
+			continue
+		words = re.split(" |, |\n|\t", line)
+		while '' in words:
+			words.remove('')
+		for word in words:
+			setTileProperties(x, int(word, 16))
+			x += 1
+		#print(words)
+
+	import_file.close()
+	print("IMPORT COMPLETE: successfully read file from " + import_file_path)
+	return
+# importColData
+
+
 def fillLeftFrame():
 	global map_canvas
 	left_frame = tk.Frame()
@@ -168,8 +256,12 @@ def fillLeftFrame():
 
 def fillMidFrame():
 	global path_entry
+	global imp_entry
+	global exp_entry
 
 	mid_frame = tk.Frame()
+
+
 	# Tile Buttons
 	tile_area_frame = tk.Frame(
 		master=mid_frame,
@@ -192,40 +284,79 @@ def fillMidFrame():
 				name="button("+str(i)+","+str(j)+")",
 				text="    ",
 				bg=color,
-				command= partial(selectTile, i*16+j)
+				command= partial(clickTile, i*16+j)
 			)
 			tile_buttons.append(button)
 			#label.pack(side=tk.TOP)
 			button.grid()
 			f.grid(row=0, column=j)
 		rowFrame.grid(row=i)
-	tile_area_frame.grid(row=1)
+	
 
 
 	# Map Path
-	path_frame = tk.Frame(
-		master=mid_frame
-	)
-	path_label = tk.Label(
+	path_frame = tk.Frame(master=mid_frame)
+	tk.Label(
 		master=path_frame,
 		text="Map Path:"
-	)
+	).grid(row=1, column=0, sticky=tk.W)
 	path_entry = tk.Entry(
 		master=path_frame,
-		width=40
+		width=36
 	)
 	path_entry.insert(0,"../graphics/maps/map1/map1.png")
 	path_button = tk.Button(
 		master=path_frame,
 		text="Load Map",
+		width=10,
 		command=loadMapFromTextbox
 	)
+	path_entry.grid(row=1, column=1)
+	path_button.grid(row=1, column=2, sticky=tk.E)
 
-	path_label.grid(row=0, column=0, sticky=tk.W)
-	path_entry.grid(row=0, column=1)
-	path_button.grid(row=0, column=2, sticky=tk.E)
+	# Import
+	imp_frame = tk.Frame(master=mid_frame)
+	tk.Label(
+		master=imp_frame,
+		text="Import Existing Col Data from:"
+	).grid(row=0, column=0, sticky=tk.W)
+	imp_entry = tk.Entry(
+		master=imp_frame,
+		width=20
+	)
+	imp_entry.insert(0,"Export/map1Col.c")
+	imp_entry.grid(row=0, column=1)
+	tk.Button(
+			master=imp_frame, 
+			text='Import', 
+			width=10,
+			command=importColData
+			).grid(row=0, column=2, sticky=tk.E)
 
-	path_frame.grid(row=0, sticky=tk.N)
+	# Export
+	exp_frame = tk.Frame(master=mid_frame)
+	tk.Label(
+		master=exp_frame,
+		text="Export As:"
+	).grid(row=0, column=0, sticky=tk.W)
+	exp_entry = tk.Entry(
+		master=exp_frame,
+		width=14
+	)
+	exp_entry.insert(0,"map1Col")
+	exp_entry.grid(row=0, column=1)
+	tk.Button(
+			master=exp_frame, 
+			text='Export', 
+			width=10,
+			command=exportColData
+			).grid(row=0, column=2, sticky=tk.E)
+
+	exp_frame.grid(row=0, column=0, columnspan=3, sticky=tk.NE)
+	imp_frame.grid(row=1, column=0, columnspan=3, sticky=tk.E)
+	path_frame.grid(row=2, columnspan=3, sticky=tk.E)
+	tile_area_frame.grid(row=3, columnspan=3)
+
 	mid_frame.grid(row=0, column=1, sticky=tk.S)
 	return
 # fillMidFrame
@@ -234,6 +365,7 @@ def fillMidFrame():
 
 def fillRightFrame():
 	global tile_label
+	global edit_mode
 	# Tile Props
 	global prop_solid
 	global prop_hole
@@ -251,12 +383,19 @@ def fillRightFrame():
 		relief=tk.RIDGE
 	)
 
+	header_label = tk.Label(
+		master=settings_frame,
+		width=32,
+		text="Edit Tile",
+		font=BOLD
+	)
+	header_label.grid(row=0)
 	tile_label = tk.Label(
 		master=settings_frame,
-		width=40,
+		width=32,
 		text="Currently Selected Tile: (X,Y)"
 	)
-	tile_label.grid(row=0)
+	tile_label.grid(row=1)
 
 	props_frame= tk.Frame(
 		master=settings_frame
@@ -266,33 +405,46 @@ def fillRightFrame():
 		master=props_frame,
 		text="Tile Properties:"
 	)
-	prop_label.grid(row=0, sticky=tk.W)
+	prop_label.grid(row=0, column=0, sticky=tk.W)
 	
 	tk.Checkbutton(
 			master=props_frame, 
 			text="Solid", 
 			variable=prop_solid
-			).grid(row=1, sticky=tk.W)
+			).grid(row=1, column=0, sticky=tk.W)
 	tk.Checkbutton(
 			master=props_frame, 
 			text="Hole", 
 			variable=prop_hole
-			).grid(row=2, sticky=tk.W)
+			).grid(row=2, column=0, sticky=tk.W)
 	tk.Checkbutton(
 			master=props_frame, 
 			text="Grabbable", 
 			variable=prop_grab
-			).grid(row=3, sticky=tk.W)
+			).grid(row=3, column=0, sticky=tk.W)
 	tk.Checkbutton(
 			master=props_frame, 
 			text="Pain", 
 			variable=prop_pain
-			).grid(row=4, sticky=tk.W)
+			).grid(row=4, column=0, sticky=tk.W)
 	tk.Checkbutton(
 			master=props_frame, 
 			text="Victory", 
 			variable=prop_victory
-			).grid(row=5, sticky=tk.W)
+			).grid(row=5, column=0, sticky=tk.W)
+
+	tk.Radiobutton(
+			master=props_frame, 
+			text="Edit Mode", 
+			variable=edit_mode,
+			value=EDIT_MODE_EDIT
+			).grid(row=1, column=1, sticky=tk.W)
+	tk.Radiobutton(
+			master=props_frame, 
+			text="Paint Mode", 
+			variable=edit_mode,
+			value=EDIT_MODE_PAINT
+			).grid(row=2, column=1, sticky=tk.W)
 
 	tk.Button(
 			master=props_frame, 
@@ -304,10 +456,10 @@ def fillRightFrame():
 			master=props_frame, 
 			text='Save', 
 			width=10,
-			command=saveTileProperties
+			command=saveSelectedTileProperties
 			).grid(row=6, column=1, sticky=tk.W)
 
-	props_frame.grid(row=1, sticky=tk.S)
+	props_frame.grid(row=2, sticky=tk.S)
 
 	settings_frame.grid(row=0, sticky=tk.N)
 
@@ -335,6 +487,7 @@ for i in range(0,256):
 window = tk.Tk()
 window.title(title)
 map_tkimg = ImageTk.PhotoImage(map_img.resize((512,512),Image.NEAREST))
+edit_mode = tk.IntVar()
 # Tile Properties
 prop_solid = tk.BooleanVar()
 prop_hole = tk.BooleanVar()
@@ -342,9 +495,6 @@ prop_grab = tk.BooleanVar()
 prop_pain = tk.BooleanVar()
 prop_victory = tk.BooleanVar()
 
-
 fillWindow()
-
-colorTile(47,0,255,0)
 
 window.mainloop()
